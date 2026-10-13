@@ -1,0 +1,103 @@
+<% @page_title = "AI" %>
+<% can_write = Current.user.can?("settings:write") %>
+<% providers = Ai::Settings::PROVIDERS %>
+
+<%= render "layouts/shared/page_header", title: "AI" %>
+<% content_for :settings_aside do %>
+  <%= render "settings/save_box", form: "ai_settings_form", capability: "settings:write" %>
+<% end %>
+
+<%= form_with url: settings_ai_path, id: "ai_settings_form", method: :patch, scope: :ai do |form| %>
+  <%= tag.fieldset class: "stack stack--lg", disabled: !can_write do %>
+    <section class="panel panel--padded fields">
+      <div class="stack stack--xs">
+        <h2 class="heading">Provider</h2>
+        <p class="text-muted">The one AI every plugin asks (Market's plans, Leads' reply drafts), on your own account. Nothing is sent until a person asks for something that needs it.</p>
+      </div>
+      <p class="text-small">
+        <% if @settings.ready? %>
+          <%= status_tag "active" %> <%= @settings.model %> through <%= @settings.provider_name %>
+        <% else %>
+          <%= status_tag "off" %> Not set up: choose a provider and add its key.
+        <% end %>
+      </p>
+      <%= settings_field "Provider" do %>
+        <%= form.select :provider, [["Choose…", ""]] + providers.map { |key, provider| ["#{provider[:name]} (#{provider[:hint]})", key] }, selected: @settings.provider %>
+      <% end %>
+      <div class="grid grid--2 fields-grid">
+        <%= settings_field "API key", hint: (@settings.api_key ? "Saved. Leave blank to keep it." : "For OpenCode Zen: opencode.ai/auth.") do %>
+          <%= form.password_field :api_key, value: nil, autocomplete: "new-password", data: {"1p-ignore": true} %>
+        <% end %>
+        <%= settings_field "Address", hint: "Only for your own server or a gateway; blank uses the provider's." do %>
+          <%= form.url_field :api_base, value: (@settings.custom_base? ? @settings.api_base : nil), placeholder: @settings.provider ? providers[@settings.provider][:base] : "https://…" %>
+        <% end %>
+      </div>
+      <% if @settings.api_key %>
+        <label class="choice text-small"><%= form.check_box :remove_api_key %><span>Remove the saved key</span></label>
+      <% end %>
+    </section>
+
+    <section class="panel panel--padded fields">
+      <div class="stack stack--xs">
+        <h2 class="heading">Models</h2>
+        <p class="text-muted">The model for most work, and a faster one for small jobs. With OpenCode Zen, Claude, GPT, Gemini and the open models (DeepSeek, GLM, Kimi…) are each reached on their own endpoint.</p>
+      </div>
+      <datalist id="ai_models">
+        <% @settings.model_list.each do |id| %>
+          <%# herb:key id %>
+          <option value="<%= id %>"></option>
+        <% end %>
+      </datalist>
+      <div class="grid grid--2 fields-grid">
+        <%= settings_field "Model", hint: @settings.provider ? "Default: #{providers[@settings.provider][:model]}" : nil do %>
+          <%= form.text_field :model, value: @settings.provider && @settings.model, list: "ai_models", autocomplete: "off" %>
+        <% end %>
+        <%= settings_field "Fast model", hint: @settings.provider ? "Default: #{providers[@settings.provider][:fast]}" : nil do %>
+          <%= form.text_field :fast_model, value: @settings.provider && @settings.model(fast: true), list: "ai_models", autocomplete: "off" %>
+        <% end %>
+      </div>
+      <p class="text-small text-muted"><%= @settings.model_list.any? ? "#{@settings.model_list.size} models listed #{time_ago_in_words(@settings.models_checked_at)} ago." : "Load the provider's models to pick from them." %></p>
+    </section>
+
+    <section class="panel panel--padded fields">
+      <div class="stack stack--xs">
+        <h2 class="heading">Use</h2>
+        <p class="text-muted">Every request is recorded with the tokens it took. Past the month's limit, plugins are told AI is unavailable until the next month.</p>
+      </div>
+      <div class="grid grid--2 fields-grid">
+        <%= settings_field "Monthly limit (millions of tokens)", hint: "Blank for no limit." do %>
+          <%= form.number_field :monthly_token_limit, value: @settings.monthly_token_limit, min: 0, step: "0.1" %>
+        <% end %>
+        <%= settings_field "This month" do %>
+          <p class="text-small"><%= number_with_delimiter @settings.tokens_this_month %> tokens</p>
+        <% end %>
+      </div>
+    </section>
+  <% end %>
+<% end %>
+
+<% if can_write && @settings.provider %>
+  <div class="cluster">
+    <%= button_to "Check the connection", settings_ai_check_path, class: "btn", form_class: "contents" %>
+    <%= button_to "Load the models", settings_ai_models_path, class: "btn", form_class: "contents" %>
+  </div>
+<% end %>
+
+<section class="panel panel--scroll">
+  <table class="data-table">
+    <thead><tr><th>When</th><th>For</th><th>Model</th><th class="data-table__num">Tokens</th><th>Result</th></tr></thead>
+    <tbody>
+      <% @requests.each do |request| %>
+        <%# herb:key request.id %>
+        <tr>
+          <td class="nowrap"><%= time_ago_tag request.created_at %></td>
+          <td class="text-small"><%= request.purpose.humanize %></td>
+          <td class="text-small"><%= request.model %> <span class="text-muted">(<%= request.endpoint.humanize.downcase %>)</span></td>
+          <td class="data-table__num"><%= number_with_delimiter request.tokens %></td>
+          <td class="<%= class_names("text-small", "text-danger": !request.ok) %>"><%= request.ok ? "OK" : request.error %><%= " (#{request.attempts} tries)" if request.attempts > 1 %></td>
+        </tr>
+      <% end %>
+      <%= table_empty_row("No requests yet.", columns: 5) if @requests.none? %>
+    </tbody>
+  </table>
+</section>
