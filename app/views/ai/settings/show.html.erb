@@ -25,7 +25,7 @@
         <%= form.select :provider, [["Choose…", ""]] + providers.map { |key, provider| ["#{provider[:name]} (#{provider[:hint]})", key] }, selected: @settings.provider %>
       <% end %>
       <div class="grid grid--2 fields-grid">
-        <%= settings_field "API key", hint: (@settings.api_key ? "Saved. Leave blank to keep it." : "For OpenCode Zen: opencode.ai/auth.") do %>
+        <%= settings_field "API key", hint: (@settings.api_key ? "Saved. Leave blank to keep it." : "For OpenCode: from the OpenCode Console.") do %>
           <%= form.password_field :api_key, value: nil, autocomplete: "new-password", data: {"1p-ignore": true} %>
         <% end %>
         <%= settings_field "Address", hint: "Only for your own server or a gateway; blank uses the provider's." do %>
@@ -40,23 +40,24 @@
     <section class="panel panel--padded fields">
       <div class="stack stack--xs">
         <h2 class="heading">Models</h2>
-        <p class="text-muted">The model for most work, and a faster one for small jobs. With OpenCode Zen, Claude, GPT, Gemini and the open models (DeepSeek, GLM, Kimi…) are each reached on their own endpoint.</p>
+        <p class="text-muted">The model for most work, and a faster one for small jobs. With OpenCode, Claude, GPT, Gemini and the open models (DeepSeek, GLM, Kimi, MiniMax…) are each reached on the endpoint OpenCode serves them on.</p>
       </div>
-      <datalist id="ai_models">
-        <% @settings.model_list.each do |id| %>
-          <%# herb:key id %>
-          <option value="<%= id %>"></option>
-        <% end %>
-      </datalist>
-      <div class="grid grid--2 fields-grid">
-        <%= settings_field "Model", hint: @settings.provider ? "Default: #{providers[@settings.provider][:model]}" : nil do %>
-          <%= form.text_field :model, value: @settings.provider && @settings.model, list: "ai_models", autocomplete: "off" %>
-        <% end %>
-        <%= settings_field "Fast model", hint: @settings.provider ? "Default: #{providers[@settings.provider][:fast]}" : nil do %>
-          <%= form.text_field :fast_model, value: @settings.provider && @settings.model(fast: true), list: "ai_models", autocomplete: "off" %>
-        <% end %>
-      </div>
-      <p class="text-small text-muted"><%= @settings.model_list.any? ? "#{@settings.model_list.size} models listed #{time_ago_in_words(@settings.models_checked_at)} ago." : "Load the provider's models to pick from them." %></p>
+      <% if @settings.provider %>
+        <% choices = @settings.model_choices %>
+        <div class="grid grid--2 fields-grid">
+          <%= settings_field "Model", hint: "Default: #{providers[@settings.provider][:model]}" do %>
+            <%= form.select :model, grouped_options_for_select(choices, @settings.model) %>
+          <% end %>
+          <%= settings_field "Fast model", hint: "Default: #{providers[@settings.provider][:fast]}" do %>
+            <%= form.select :fast_model, grouped_options_for_select(choices, @settings.model(fast: true)) %>
+          <% end %>
+        </div>
+      <% else %>
+        <p class="text-small text-muted">Choose a provider and save to pick its models.</p>
+      <% end %>
+      <% if @settings.provider %>
+        <p class="text-small text-muted"><%= @settings.model_list.any? ? "#{@settings.model_list.size} models from #{@settings.provider_name}, listed #{time_ago_in_words(@settings.models_checked_at)} ago." : "Only the defaults so far: load #{@settings.provider_name}'s models to pick from all of them." %></p>
+      <% end %>
     </section>
 
     <section class="panel panel--padded fields">

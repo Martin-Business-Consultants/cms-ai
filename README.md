@@ -5,22 +5,28 @@ A plugin for the CMS (see `docs/plugins.md` in [Libre Publish](https://github.co
 One AI provider for every plugin that wants one: Market's plans, Leads' reply drafts. It's set up once
 in **Settings › AI**:
 
-- **OpenCode Zen**: Claude, GPT, Gemini and the open models (DeepSeek, GLM, Kimi…) on one key.
+- **OpenCode** (Console or Zen): Claude, GPT, Gemini and the open models (DeepSeek, GLM, Kimi, MiniMax…) on one key.
+- **OpenCode Go**: the open-model subscription.
 - **Anthropic**, **OpenAI** or **OpenRouter**.
 - **An Ollama server of your own**, where nothing leaves it.
 
-The settings take the key, the model (and a faster one for small jobs), a list of the provider's
-models to pick from, and an optional monthly token limit. *Check the connection* asks the model for a
+The settings take the key, the model (and a faster one for small jobs), picked from the provider's
+own list, and an optional monthly token limit. *Check the connection* asks the model for a
 tiny answer, which proves the key, the model and its endpoint work together. Every request is
 recorded with the tokens it took. The key is encrypted with the CMS's secrets and never shown or read
 back.
 
-With OpenCode Zen, each model family is reached on the endpoint it's served on:
+With OpenCode, each model family is reached on the endpoint OpenCode serves it on
+([its model tables](https://opencode.ai/v2/docs/console/models)):
 - Claude (and Qwen) through Anthropic Messages, the answer's shape given as a tool;
 - GPT through OpenAI Responses, with a strict JSON schema;
 - Gemini through Google's generateContent;
 - the open models through chat completions, with a JSON schema, or a JSON object for a model that
   won't take one.
+
+On OpenCode Go, MiniMax and Qwen go through Messages too. A model on an endpoint of its own (Jev)
+isn't offered. The model and fast model are picked from the provider's own list, loaded when the
+provider is chosen. OpenCode lists its models without a key.
 
 What may pass (the network, 429s, 5xx) is retried with backoff.
 

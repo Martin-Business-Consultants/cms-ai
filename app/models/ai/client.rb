@@ -34,6 +34,8 @@ class Ai::Client
     model = @settings.model(fast: fast)
     protocol = @settings.protocol_for(model)
     name = name.to_s.gsub(/[^a-zA-Z0-9_-]/, "_").first(64)
+    raise Ai::Error, "#{model} can't give answers in a fixed shape: choose another model in Settings › AI" unless protocol
+
     request = send(:"#{protocol}_request", model: model, system: system, prompt: prompt, schema: schema, name: name, max_tokens: max_tokens)
     call(purpose: purpose, user: user, model: model, protocol: protocol, request: request) do |answer|
       send(:"#{protocol}_answer", answer)
@@ -46,7 +48,7 @@ class Ai::Client
     call(purpose: purpose, user: user, model: model, protocol: protocol, request: request) { chat_completions_answer(it) }
   end
 
-  # The provider's models, by id (OpenAI's list format, which OpenCode Zen, OpenRouter and Ollama use too).
+  # The provider's models, by id (OpenAI's list format, which OpenCode, OpenRouter and Ollama use too).
   def models
     status, body = @transport.call(:get, "#{@settings.api_base}/models", headers(:list), nil)
     raise Ai::Error, failure(status, parse(body)) unless status.to_i.between?(200, 299)
@@ -129,7 +131,7 @@ class Ai::Client
     json(text)
   end
 
-  # OpenAI-style chat completions (OpenCode Zen's open models, OpenRouter, Ollama).
+  # OpenAI-style chat completions (OpenCode's open models, OpenRouter, Ollama).
   def chat_completions_request(model:, system:, prompt:, schema:, name:, max_tokens:, strict: true)
     format = strict ? {type: "json_schema", json_schema: {name: name, schema: schema, strict: true}} : {type: "json_object"}
     {url: "#{@settings.api_base}/chat/completions",

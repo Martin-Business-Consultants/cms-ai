@@ -34,22 +34,22 @@ RSpec.describe Ai::Client do
   def ask(client) = client.structured(purpose: "market_plan", system: "Plan it.", prompt: "The facts.", schema: SCHEMA)
   def sent = @transport.calls.last
 
-  it "asks Claude on OpenCode Zen through Anthropic Messages, the schema as a tool it must use" do
+  it "asks Claude on OpenCode through Anthropic Messages, the schema as a tool it must use" do
     answer = ask(client([200, JSON.generate(content: [{type: "tool_use", name: "market_plan", input: {ok: true}}], usage: {input_tokens: 120, output_tokens: 8})]))
 
     expect(answer).to eq("ok" => true)
-    expect(sent[:url]).to eq("https://opencode.ai/zen/v1/messages")
+    expect(sent[:url]).to eq("https://opencode.ai/inference/v1/messages")
     expect(sent[:headers]).to include("x-api-key" => "zen-key", "Authorization" => "Bearer zen-key", "anthropic-version" => "2023-06-01")
-    expect(sent[:body]).to include(model: "claude-sonnet-5", system: "Plan it.", tool_choice: {type: "tool", name: "market_plan"})
+    expect(sent[:body]).to include(model: "claude-sonnet-5-5", system: "Plan it.", tool_choice: {type: "tool", name: "market_plan"})
     expect(sent[:body][:tools].first[:input_schema]).to eq(SCHEMA)
-    expect(Ai::Request.last).to have_attributes(purpose: "market_plan", provider: "opencode", model: "claude-sonnet-5", endpoint: "messages", ok: true, input_tokens: 120, output_tokens: 8)
+    expect(Ai::Request.last).to have_attributes(purpose: "market_plan", provider: "opencode", model: "claude-sonnet-5-5", endpoint: "messages", ok: true, input_tokens: 120, output_tokens: 8)
   end
 
   it "asks GPT through OpenAI Responses with a strict schema" do
     answer = ask(client([200, JSON.generate(output: [{type: "message", content: [{type: "output_text", text: %({"ok":true})}]}], usage: {input_tokens: 5, output_tokens: 2})], model: "gpt-5.6"))
 
     expect(answer).to eq("ok" => true)
-    expect(sent[:url]).to eq("https://opencode.ai/zen/v1/responses")
+    expect(sent[:url]).to eq("https://opencode.ai/inference/v1/responses")
     expect(sent[:body][:text][:format]).to include(type: "json_schema", strict: true, schema: SCHEMA)
   end
 
@@ -59,7 +59,7 @@ RSpec.describe Ai::Client do
 
     expect(answer).to eq("ok" => true)
     expect(@transport.calls.map { it[:body][:response_format][:type] }).to eq(%w[json_schema json_object])
-    expect(sent[:url]).to eq("https://opencode.ai/zen/v1/chat/completions")
+    expect(sent[:url]).to eq("https://opencode.ai/inference/v1/chat/completions")
     expect(sent[:body][:messages].first[:content]).to include("matching this JSON schema")
     expect(Ai::Request.last).to have_attributes(endpoint: "chat_completions", input_tokens: 9, output_tokens: 3)
   end
@@ -68,7 +68,7 @@ RSpec.describe Ai::Client do
     answer = ask(client([200, JSON.generate(candidates: [{content: {parts: [{text: %({"ok":true})}]}}], usageMetadata: {promptTokenCount: 4, candidatesTokenCount: 1})], model: "gemini-3-pro"))
 
     expect(answer).to eq("ok" => true)
-    expect(sent[:url]).to eq("https://opencode.ai/zen/v1/models/gemini-3-pro:generateContent")
+    expect(sent[:url]).to eq("https://opencode.ai/inference/v1/models/gemini-3-pro:generateContent")
     expect(sent[:headers]).to include("x-goog-api-key" => "zen-key")
   end
 
@@ -80,18 +80,34 @@ RSpec.describe Ai::Client do
   end
 
   it "tries again what may pass, and fails at once on a refused key" do
-    expect(ask(client([529, "{}"], Ai::Client::Transient.new("Couldn't reach OpenCode Zen: SocketError"),
+    expect(ask(client([529, "{}"], Ai::Client::Transient.new("Couldn't reach OpenCode: SocketError"),
       [200, JSON.generate(content: [{type: "tool_use", input: {ok: true}}])]))).to eq("ok" => true)
     expect(waits).to eq([2, 4])
     expect(Ai::Request.last.attempts).to eq(3)
 
-    expect { ask(client([401, JSON.generate(error: {message: "invalid key"})])) }.to raise_error(Ai::Error, "OpenCode Zen didn't accept the key in Settings › AI (invalid key)")
+    expect { ask(client([401, JSON.generate(error: {message: "invalid key"})])) }.to raise_error(Ai::Error, "OpenCode didn't accept the key in Settings › AI (invalid key)")
     expect(Ai::Request.last).to have_attributes(ok: false, http_status: 401)
+  end
+
+  it "follows OpenCode's tables for each model's endpoint, on OpenCode and on Go" do
+    settings = Ai::Settings.update("provider" => "opencode")
+    expect(%w[claude-opus-5-5 qwen3.7-plus qwen3.8-max gpt-5.6-sol grok-4.7 muse-spark-1.3 gemini-3.8-flash minimax-m3 kimi-k3 jev-1.13].map { settings.protocol_for(it) })
+      .to eq([:messages, :messages, :chat_completions, :responses, :responses, :responses, :gemini, :chat_completions, :chat_completions, nil])
+    expect(settings.model_choices.values.flatten).to include("claude-sonnet-5-5", "claude-haiku-5-5")
+
+    go = Ai::Settings.update("provider" => "opencode_go", "model" => "opencode-go/minimax-m3")
+    expect(go).to have_attributes(api_base: "https://opencode.ai/zen/go/v1", model: "minimax-m3")
+    expect(%w[minimax-m3 qwen3.8-max grok-4.7 glm-5.3].map { go.protocol_for(it) }).to eq([:messages, :messages, :responses, :chat_completions])
+  end
+
+  it "won't ask a model that can't give an answer in a fixed shape" do
+    expect { ask(client(model: "jev-1.13")) }.to raise_error(Ai::Error, /jev-1.13 can't give answers in a fixed shape/)
+    expect(Ai::Settings.current).not_to be_ready
   end
 
   it "lists the provider's models" do
     expect(client([200, JSON.generate(data: [{id: "kimi-k3"}, {id: "claude-sonnet-5"}])]).models).to eq(%w[claude-sonnet-5 kimi-k3])
-    expect(sent[:url]).to eq("https://opencode.ai/zen/v1/models")
+    expect(sent[:url]).to eq("https://opencode.ai/inference/v1/models")
   end
 end
 

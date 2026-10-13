@@ -3,8 +3,8 @@
 require "ai/version"
 require "ai/engine"
 
-# AI for the CMS: one provider, set up once in Settings › AI (OpenCode Zen,
-# Anthropic, OpenAI, OpenRouter, or an Ollama server of your own), that every
+# AI for the CMS: one provider, set up once in Settings › AI (OpenCode,
+# OpenCode Go, Anthropic, OpenAI, OpenRouter, or an Ollama server of your own), that every
 # plugin asks through Ai.structured rather than keeping a key of its own.
 # Installed from its own repository; off by default.
 module Ai

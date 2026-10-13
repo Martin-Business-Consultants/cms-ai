@@ -33,8 +33,8 @@ module Ai
     config.to_prepare do
       Cms::Plugins.register :ai, name: "AI", version: Ai::VERSION, author: "Martin Business Consultants",
         enabled_by_default: false, requires: ">= 1.32", homepage: "https://github.com/Martin-Business-Consultants/cms-ai",
-        description: "One AI provider for every plugin that wants one (Market's plans, Leads' reply drafts): OpenCode Zen, " \
-                     "Anthropic, OpenAI, OpenRouter or your own Ollama, with its key set once and a monthly token limit."
+        description: "One AI provider for every plugin that wants one (Market's plans, Leads' reply drafts): OpenCode, " \
+                     "OpenCode Go, Anthropic, OpenAI, OpenRouter or your own Ollama, with its key set once and a monthly token limit."
 
       Cms::Plugins.settings :ai, "AI", -> { settings_ai_path },
         description: "The provider, its key and model that plugins use, and how many tokens a month they may.",

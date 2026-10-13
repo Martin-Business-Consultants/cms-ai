@@ -5,13 +5,17 @@
 # faster one for small jobs), and how many tokens a month plugins may use.
 class Ai::Settings
   KEY = "ai"
+  # Where each provider is. OpenCode's own (docs: opencode.ai/v2/docs/console/models) is
+  # inference/v1; its Go subscription (docs: /v2/docs/console/go) is zen/go/v1.
   PROVIDERS = {
-    "opencode" => {name: "OpenCode Zen", hint: "Claude, GPT, Gemini and open models on one key", base: "https://opencode.ai/zen/v1",
-                   model: "claude-sonnet-5", fast: "claude-haiku-4-5", key: true},
-    "anthropic" => {name: "Anthropic", hint: "Claude", base: "https://api.anthropic.com/v1", model: "claude-sonnet-5", fast: "claude-haiku-4-5", key: true},
+    "opencode" => {name: "OpenCode", hint: "Claude, GPT, Gemini and open models on one key", base: "https://opencode.ai/inference/v1",
+                   model: "claude-sonnet-5-5", fast: "claude-haiku-5-5", key: true},
+    "opencode_go" => {name: "OpenCode Go", hint: "the open-model subscription", base: "https://opencode.ai/zen/go/v1",
+                      model: "kimi-k3", fast: "deepseek-v4-flash", key: true},
+    "anthropic" => {name: "Anthropic", hint: "Claude", base: "https://api.anthropic.com/v1", model: "claude-sonnet-5-5", fast: "claude-haiku-5-5", key: true},
     "openai" => {name: "OpenAI", hint: "GPT", base: "https://api.openai.com/v1", model: "gpt-5.6", fast: "gpt-5.4-mini", key: true},
-    "openrouter" => {name: "OpenRouter", hint: "any model", base: "https://openrouter.ai/api/v1", model: "anthropic/claude-sonnet-5",
-                     fast: "anthropic/claude-haiku-4-5", key: true},
+    "openrouter" => {name: "OpenRouter", hint: "any model", base: "https://openrouter.ai/api/v1", model: "anthropic/claude-sonnet-5-5",
+                     fast: "anthropic/claude-haiku-5-5", key: true},
     "ollama" => {name: "Ollama", hint: "your own server: nothing leaves it", base: "http://localhost:11434/v1", model: "llama4", fast: "llama4", key: false}
   }.freeze
 
@@ -27,10 +31,10 @@ class Ai::Settings
   def api_base = (@data["api_base"].presence || (provider && PROVIDERS[provider][:base])).to_s.chomp("/")
   def custom_base? = @data["api_base"].present?
 
-  # The model id as the provider takes it ("opencode/claude-sonnet-5", as OpenCode lists it, works too).
+  # The model id as the provider takes it ("opencode/claude-sonnet-5-5", as OpenCode's own config names it, works too).
   def model(fast: false)
     chosen = fast ? @data["fast_model"].presence || @data["model"].presence : @data["model"].presence
-    (chosen || (provider && PROVIDERS[provider][fast ? :fast : :model])).to_s.delete_prefix("opencode/")
+    (chosen || (provider && PROVIDERS[provider][fast ? :fast : :model])).to_s.sub(%r{\Aopencode(-go)?/}, "")
   end
 
   def model_list = Array(@data["models"])
@@ -41,25 +45,49 @@ class Ai::Settings
   def tokens_this_month = Ai::Request.where(created_at: Time.current.beginning_of_month..).sum("input_tokens + output_tokens")
   def over_limit? = monthly_token_limit.present? && tokens_this_month >= monthly_token_limit * 1_000_000
 
-  def ready? = provider.present? && (api_key.present? || !PROVIDERS[provider][:key])
+  def ready? = provider.present? && (api_key.present? || !PROVIDERS[provider][:key]) && usable?(model)
 
-  # The endpoint a model is reached through. OpenCode Zen serves each family on
-  # its own: Claude (and Qwen) as Anthropic Messages, GPT as OpenAI Responses,
-  # Gemini as Google's generateContent, and the open models as chat completions.
+  # The endpoint a model is reached through, nil for one structured answers can't use. OpenCode
+  # serves each family on its own, by its documented tables: on OpenCode, Claude and Qwen (but
+  # Qwen3.8 Max) as Anthropic Messages, GPT, Grok and Muse as OpenAI Responses, Gemini as Google's
+  # generateContent, Jev on an endpoint of its own, and the rest (DeepSeek, GLM, Kimi, MiniMax…) as
+  # chat completions; on Go, Claude, MiniMax and Qwen as Messages, GPT, Grok and Muse as Responses.
   def protocol_for(model_id)
+    id = model_id.to_s
     case provider
     when "anthropic" then :messages
     when "openai" then :responses
     when "openrouter", "ollama" then :chat_completions
     when "opencode"
-      case model_id.to_s
+      case id
+      when /\Ajev/ then nil
       when /\Aqwen3\.8-max/ then :chat_completions
       when /\A(claude|qwen)/ then :messages
-      when /\A(gpt|o\d)/ then :responses
+      when /\A(gpt|grok|muse|o\d)/ then :responses
       when /\Agemini/ then :gemini
       else :chat_completions
       end
+    when "opencode_go"
+      case id
+      when /\A(claude|minimax|qwen)/ then :messages
+      when /\A(gpt|grok|muse)/ then :responses
+      else :chat_completions
+      end
     end
+  end
+
+  def usable?(model_id) = protocol_for(model_id).present?
+
+  FAMILIES = {"claude" => "Claude", "gpt" => "GPT", "o" => "GPT", "gemini" => "Gemini", "grok" => "Grok", "muse" => "Muse", "deepseek" => "DeepSeek",
+              "glm" => "GLM", "kimi" => "Kimi", "minimax" => "MiniMax", "qwen" => "Qwen", "mistral" => "Mistral", "mimo" => "MiMo",
+              "llama" => "Llama", "nemotron" => "Nemotron", "longcat" => "LongCat", "anthropic" => "Claude", "openai" => "GPT"}.freeze
+
+  # The models to pick from: the provider's list once loaded (those structured answers can use),
+  # always with the defaults and what's chosen, grouped by family for the select.
+  def model_choices
+    ids = (model_list.select { usable?(it) } + [model, model(fast: true), (provider && PROVIDERS[provider][:model]), (provider && PROVIDERS[provider][:fast])].compact_blank).uniq.sort
+    groups = ids.group_by { FAMILIES.fetch(it[/\A[a-z]+/i].to_s.downcase, "Other") }
+    groups.sort_by { |family, _| [family == "Other" ? 1 : 0, family] }.to_h
   end
 
   # From Settings › AI's form or the API's PATCH: only what was sent changes.
